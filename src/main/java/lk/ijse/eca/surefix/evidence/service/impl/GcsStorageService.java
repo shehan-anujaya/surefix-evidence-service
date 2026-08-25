@@ -13,7 +13,6 @@ import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
 
 import lk.ijse.eca.surefix.evidence.dto.EvidenceFile;
 import lk.ijse.eca.surefix.evidence.exception.EvidenceNotFoundException;
@@ -27,11 +26,7 @@ public class GcsStorageService implements StorageService {
     private final Storage storage;
     private final String bucket;
 
-    public GcsStorageService(@Value("${surefix.storage.bucket}") String bucket) {
-        this(StorageOptions.getDefaultInstance().getService(), bucket); // Application Default Credentials
-    }
-
-    GcsStorageService(Storage storage, String bucket) {
+    public GcsStorageService(Storage storage, @Value("${surefix.storage.bucket}") String bucket) {
         this.storage = storage;
         this.bucket = bucket;
     }
