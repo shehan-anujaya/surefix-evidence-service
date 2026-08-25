@@ -1,0 +1,49 @@
+name: Build and deploy to GCE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # OIDC token for Workload Identity Federation
+
+env:
+  PROJECT_ID: surefix-eca
+  REGION: us-central1
+  COMPONENT: evidence-service
+  ARTIFACT_BUCKET: surefix-eca-artifacts
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+
+      - name: Build
+        run: mvn -B -q -DskipTests package
+
+      - name: Authenticate to GCP (Workload Identity Federation, no keys)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload artifact + PM2 config to Cloud Storage
+        run: |
+          gcloud storage cp target/$COMPONENT.jar gs://$ARTIFACT_BUCKET/$COMPONENT/$COMPONENT.jar
+          gcloud storage cp ecosystem.config.js gs://$ARTIFACT_BUCKET/$COMPONENT/ecosystem.config.js
+
+      - name: Rolling replace of the managed instance group
+        run: |
+          gcloud compute instance-groups managed rolling-action replace mig-$COMPONENT \
+            --region $REGION --project $PROJECT_ID --max-surge 3 --max-unavailable 0
