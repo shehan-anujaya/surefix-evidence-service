@@ -28,7 +28,7 @@ jobs:
           cache: maven
 
       - name: Build
-        run: mvn -B -q -DskipTests package
+        run: mvn -B -q package   # runs the unit tests too
 
       - name: Authenticate to GCP (Workload Identity Federation, no keys)
         uses: google-github-actions/auth@v2
