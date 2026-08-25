@@ -2,6 +2,7 @@ package lk.ijse.eca.surefix.evidence.controller;
 
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
 import lk.ijse.eca.surefix.evidence.dto.EvidenceFile;
 import lk.ijse.eca.surefix.evidence.service.StorageService;
@@ -30,11 +30,7 @@ public class EvidenceController {
 
     @PostMapping
     public ResponseEntity<EvidenceFile> upload(@RequestParam String runId, @RequestParam("file") MultipartFile file) {
-        try {
-            return ResponseEntity.status(HttpStatus.CREATED).body(storage.upload(runId, file));
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(storage.upload(runId, file));
     }
 
     @GetMapping
@@ -43,23 +39,21 @@ public class EvidenceController {
     }
 
     @GetMapping("/{runId}/{filename}")
-    public ResponseEntity<byte[]> get(@PathVariable String runId, @PathVariable String filename) {
-        try {
-            StorageService.StoredObject obj = storage.load(runId, filename);
-            MediaType type = obj.contentType() != null ? MediaType.parseMediaType(obj.contentType()) : MediaType.APPLICATION_OCTET_STREAM;
-            return ResponseEntity.ok().contentType(type).body(obj.content());
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+    public ResponseEntity<byte[]> get(@PathVariable String runId, @PathVariable String filename,
+                                      @RequestParam(defaultValue = "false") boolean download) {
+        StorageService.StoredObject obj = storage.load(runId, filename);
+        MediaType type = obj.contentType() != null ? MediaType.parseMediaType(obj.contentType()) : MediaType.APPLICATION_OCTET_STREAM;
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok().contentType(type)
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300");
+        if (download) {
+            response.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
         }
+        return response.body(obj.content());
     }
 
     @DeleteMapping("/{runId}/{filename}")
     public ResponseEntity<Void> delete(@PathVariable String runId, @PathVariable String filename) {
-        try {
-            storage.delete(runId, filename);
-            return ResponseEntity.noContent().build();
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
-        }
+        storage.delete(runId, filename);
+        return ResponseEntity.noContent().build();
     }
 }
