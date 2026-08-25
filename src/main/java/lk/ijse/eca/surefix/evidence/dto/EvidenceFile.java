@@ -1,4 +1,6 @@
 package lk.ijse.eca.surefix.evidence.dto;
 
-public record EvidenceFile(String runId, String filename, String contentType, long size, String url) {
+import java.time.Instant;
+
+public record EvidenceFile(String runId, String filename, String contentType, long size, Instant uploadedAt, String url) {
 }

@@ -1,8 +1,9 @@
 package lk.ijse.eca.surefix.evidence.service.impl;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
+import java.util.Objects;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -15,69 +16,78 @@ import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 
 import lk.ijse.eca.surefix.evidence.dto.EvidenceFile;
+import lk.ijse.eca.surefix.evidence.exception.EvidenceNotFoundException;
+import lk.ijse.eca.surefix.evidence.service.ObjectKeys;
 import lk.ijse.eca.surefix.evidence.service.StorageService;
 
 /** Stores evidence files (screenshots, traces, logs) in a Google Cloud Storage bucket under runs/{runId}/. */
 @Service
 public class GcsStorageService implements StorageService {
 
-    private final Storage storage = StorageOptions.getDefaultInstance().getService(); // Application Default Credentials
+    private final Storage storage;
     private final String bucket;
 
     public GcsStorageService(@Value("${surefix.storage.bucket}") String bucket) {
+        this(StorageOptions.getDefaultInstance().getService(), bucket); // Application Default Credentials
+    }
+
+    GcsStorageService(Storage storage, String bucket) {
+        this.storage = storage;
         this.bucket = bucket;
     }
 
     @Override
     public EvidenceFile upload(String runId, MultipartFile file) {
-        if (file.isEmpty()) {
+        if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("File is empty");
         }
-        String original = file.getOriginalFilename();
-        String ext = original != null && original.contains(".") ? original.substring(original.lastIndexOf('.')) : "";
-        String filename = UUID.randomUUID() + ext;
+        String filename = ObjectKeys.newFilename(file.getOriginalFilename());
         String contentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
         try {
             Blob blob = storage.create(
-                    BlobInfo.newBuilder(bucket, key(runId, filename)).setContentType(contentType).build(),
+                    BlobInfo.newBuilder(bucket, ObjectKeys.key(runId, filename))
+                            .setContentType(contentType)
+                            .setMetadata(java.util.Map.of("originalFilename",
+                                    Objects.requireNonNullElse(file.getOriginalFilename(), filename)))
+                            .build(),
                     file.getBytes());
             return toDto(blob);
         } catch (IOException e) {
-            throw new RuntimeException("Failed to store file", e);
+            throw new IllegalStateException("Failed to read the uploaded file", e);
         }
     }
 
     @Override
     public List<EvidenceFile> list(String runId) {
-        return storage.list(bucket, Storage.BlobListOption.prefix("runs/" + runId + "/"))
+        return storage.list(bucket, Storage.BlobListOption.prefix(ObjectKeys.prefix(runId)))
                 .streamAll()
                 .map(this::toDto)
+                .filter(Objects::nonNull)
+                .sorted((a, b) -> b.uploadedAt().compareTo(a.uploadedAt()))
                 .toList();
     }
 
     @Override
     public StoredObject load(String runId, String filename) {
-        Blob blob = storage.get(BlobId.of(bucket, key(runId, filename)));
+        Blob blob = storage.get(BlobId.of(bucket, ObjectKeys.key(runId, filename)));
         if (blob == null) {
-            throw new IllegalArgumentException("File not found: " + filename);
+            throw new EvidenceNotFoundException(runId, filename);
         }
         return new StoredObject(blob.getContent(), blob.getContentType());
     }
 
     @Override
     public void delete(String runId, String filename) {
-        if (!storage.delete(BlobId.of(bucket, key(runId, filename)))) {
-            throw new IllegalArgumentException("File not found: " + filename);
+        if (!storage.delete(BlobId.of(bucket, ObjectKeys.key(runId, filename)))) {
+            throw new EvidenceNotFoundException(runId, filename);
         }
     }
 
-    private static String key(String runId, String filename) {
-        return "runs/" + runId + "/" + filename;
-    }
-
     private EvidenceFile toDto(Blob blob) {
-        String[] parts = blob.getName().split("/", 3); // runs / {runId} / {filename}
-        return new EvidenceFile(parts[1], parts[2], blob.getContentType(), blob.getSize(),
-                "/api/v1/evidence/" + parts[1] + "/" + parts[2]);
+        String[] parts = ObjectKeys.parse(blob.getName());
+        if (parts == null) return null;
+        Instant uploadedAt = blob.getCreateTimeOffsetDateTime() != null ? blob.getCreateTimeOffsetDateTime().toInstant() : Instant.EPOCH;
+        return new EvidenceFile(parts[0], parts[1], blob.getContentType(), blob.getSize() == null ? 0 : blob.getSize(),
+                uploadedAt, "/api/v1/evidence/" + parts[0] + "/" + parts[1]);
     }
 }
