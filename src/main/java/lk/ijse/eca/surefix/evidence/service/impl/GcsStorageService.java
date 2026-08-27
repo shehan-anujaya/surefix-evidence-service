@@ -3,6 +3,7 @@ package lk.ijse.eca.surefix.evidence.service.impl;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -42,7 +43,7 @@ public class GcsStorageService implements StorageService {
             Blob blob = storage.create(
                     BlobInfo.newBuilder(bucket, ObjectKeys.key(runId, filename))
                             .setContentType(contentType)
-                            .setMetadata(java.util.Map.of("originalFilename",
+                            .setMetadata(Map.of("originalFilename",
                                     Objects.requireNonNullElse(file.getOriginalFilename(), filename)))
                             .build(),
                     file.getBytes());
@@ -68,7 +69,7 @@ public class GcsStorageService implements StorageService {
         if (blob == null) {
             throw new EvidenceNotFoundException(runId, filename);
         }
-        return new StoredObject(blob.getContent(), blob.getContentType());
+        return new StoredObject(blob.getContent(), blob.getContentType(), originalName(blob, filename));
     }
 
     @Override
@@ -82,7 +83,15 @@ public class GcsStorageService implements StorageService {
         String[] parts = ObjectKeys.parse(blob.getName());
         if (parts == null) return null;
         Instant uploadedAt = blob.getCreateTimeOffsetDateTime() != null ? blob.getCreateTimeOffsetDateTime().toInstant() : Instant.EPOCH;
-        return new EvidenceFile(parts[0], parts[1], blob.getContentType(), blob.getSize() == null ? 0 : blob.getSize(),
-                uploadedAt, "/api/v1/evidence/" + parts[0] + "/" + parts[1]);
+        return new EvidenceFile(parts[0], parts[1], originalName(blob, parts[1]), blob.getContentType(),
+                blob.getSize() == null ? 0 : blob.getSize(), uploadedAt,
+                "/api/v1/evidence/" + parts[0] + "/" + parts[1]);
+    }
+
+    /** The name the file was uploaded with, falling back to the generated object name. */
+    private static String originalName(Blob blob, String fallback) {
+        Map<String, String> md = blob.getMetadata();
+        String original = md == null ? null : md.get("originalFilename");
+        return original == null || original.isBlank() ? fallback : original;
     }
 }

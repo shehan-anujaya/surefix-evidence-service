@@ -46,7 +46,9 @@ public class EvidenceController {
         ResponseEntity.BodyBuilder response = ResponseEntity.ok().contentType(type)
                 .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300");
         if (download) {
-            response.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
+            // hand the browser the name the file was uploaded with, not the generated object name
+            String name = obj.originalFilename().replaceAll("[\"\\r\\n\\\\]", "_");
+            response.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + name + "\"");
         }
         return response.body(obj.content());
     }

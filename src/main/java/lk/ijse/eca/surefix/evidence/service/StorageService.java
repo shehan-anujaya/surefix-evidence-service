@@ -12,5 +12,5 @@ public interface StorageService {
     StoredObject load(String runId, String filename);
     void delete(String runId, String filename);
 
-    record StoredObject(byte[] content, String contentType) {}
+    record StoredObject(byte[] content, String contentType, String originalFilename) {}
 }
